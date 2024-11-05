@@ -71,6 +71,8 @@ class TrainRobomimicLowdimWorkspace(BaseWorkspace):
         val_dataloader = DataLoader(val_dataset, **cfg.val_dataloader)
 
         self.model.set_normalizer(normalizer)
+        # for param in normalizer['obs'].params_dict['_default'].keys():  
+        #     normalizer['obs'].params_dict['_default'][param] =  normalizer['obs'].params_dict['_default'][param][:-3]
 
         # configure env
         env_runner: BaseLowdimRunner

@@ -29,6 +29,7 @@ from gym.vector.utils import (
     CloudpickleWrapper,
     clear_mpi_env_vars,
 )
+import traceback
 
 __all__ = ["AsyncVectorEnv"]
 
@@ -250,9 +251,9 @@ class AsyncVectorEnv(VectorEnv):
                 "for a pending call to `{0}` to complete.".format(self._state.value),
                 self._state.value,
             )
-
         for pipe, action in zip(self.parent_pipes, actions):
             pipe.send(("step", action))
+
         self._state = AsyncState.WAITING_STEP
 
     def step_wait(self, timeout=None):
@@ -622,17 +623,29 @@ def _worker_shared_memory(index, env_fn, pipe, parent_pipe, shared_memory, error
             command, data = pipe.recv()
             if command == "reset":
                 observation = env.reset()
-                write_to_shared_memory(
-                    index, observation, shared_memory, observation_space
-                )
+                try:
+                    write_to_shared_memory(
+                        index, observation, shared_memory, observation_space
+                    )
+                except Exception as e:
+                    traceback.print_exc()
+                    raise
+                    
                 pipe.send((None, True))
             elif command == "step":
-                observation, reward, done, info = env.step(data)
+               
                 # if done:
                 #     observation = env.reset()
-                write_to_shared_memory(
-                    index, observation, shared_memory, observation_space
-                )
+                print("GOING")
+                try:
+                    observation, reward, done, info = env.step(data)
+                    print("MADE IT THIS FAR")
+                    write_to_shared_memory(
+                        index, observation, shared_memory, observation_space
+                    )
+                except Exception as e:
+                    traceback.print_exc()
+                    raise
                 pipe.send(((None, reward, done, info), True))
             elif command == "seed":
                 env.seed(data)

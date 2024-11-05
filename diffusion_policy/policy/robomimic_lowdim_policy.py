@@ -21,7 +21,6 @@ class RobomimicLowdimPolicy(BaseLowdimPolicy):
         # key for robomimic obs input
         # previously this is 'object', 'robot0_eef_pos' etc
         obs_key = 'obs'
-
         config = get_robomimic_config(
             algo_name=algo_name,
             hdf5_type=obs_type,
@@ -34,7 +33,7 @@ class RobomimicLowdimPolicy(BaseLowdimPolicy):
         model: PolicyAlgo = algo_factory(
                 algo_name=config.algo_name,
                 config=config,
-                obs_key_shapes={obs_key: [obs_dim]},
+                obs_key_shapes={obs_key: [obs_dim-3]},
                 ac_dim=action_dim,
                 device='cpu',
             )

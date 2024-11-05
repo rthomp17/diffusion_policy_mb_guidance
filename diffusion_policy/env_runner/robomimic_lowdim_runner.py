@@ -29,7 +29,7 @@ def create_env(env_meta, obs_keys):
         {'low_dim': obs_keys})
     env = EnvUtils.create_env_from_metadata(
         env_meta=env_meta,
-        render=False, 
+        #render=True, 
         # only way to not show collision geometry
         # is to enable render_offscreen
         # which uses a lot of RAM.
@@ -56,7 +56,7 @@ class RobomimicLowdimRunner(BaseLowdimRunner):
             test_start_seed=10000,
             max_steps=400,
             n_obs_steps=2,
-            n_action_steps=8,
+            n_action_steps=4,#8,
             n_latency_steps=0,
             render_hw=(256,256),
             render_camera_name='agentview',
@@ -268,9 +268,14 @@ class RobomimicLowdimRunner(BaseLowdimRunner):
             done = False
             while not done:
                 # create obs dict
+                # print(obs[:,:self.n_obs_steps,].astype(np.float32).shape)
+                # print(obs[:,:self.n_obs_steps,:-3].astype(np.float32).shape)
+                # exit(0)
+
                 np_obs_dict = {
                     # handle n_latency_steps by discarding the last n_latency_steps
-                    'obs': obs[:,:self.n_obs_steps].astype(np.float32)
+                    'obs': obs[:,:self.n_obs_steps,:-6].astype(np.float32), 
+                    'force_info': obs[:,:self.n_obs_steps, -6:].astype(np.float32), 
                 }
                 if self.past_action and (past_action is not None):
                     # TODO: not tested
@@ -302,7 +307,11 @@ class RobomimicLowdimRunner(BaseLowdimRunner):
                 if self.abs_action:
                     env_action = self.undo_transform_action(action)
 
+
+                # print(np.sum(env_action[0], axis=0))
+                # input("next")
                 obs, reward, done, info = env.step(env_action)
+
                 done = np.all(done)
                 past_action = action
 

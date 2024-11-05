@@ -11,9 +11,12 @@ class RobomimicLowdimWrapper(gym.Env):
             'object', 
             'robot0_eef_pos', 
             'robot0_eef_quat', 
-            'robot0_gripper_qpos'],
+            'robot0_gripper_qpos',
+            'robot0_ee_force',
+            'robot0_ee_torque'],
         init_state: Optional[np.ndarray]=None,
         render_hw=(256,256),
+        #has_renderer=True,
         render_camera_name='agentview'
         ):
 
@@ -22,6 +25,7 @@ class RobomimicLowdimWrapper(gym.Env):
         self.init_state = init_state
         self.render_hw = render_hw
         self.render_camera_name = render_camera_name
+
         self.seed_state_map = dict()
         self._seed = None
         
@@ -78,14 +82,18 @@ class RobomimicLowdimWrapper(gym.Env):
             self.env.reset()
 
         # return obs
+        obs, _, _, _ = self.env.step(np.array([0,0,0,0,0,0,1]))
+        self.init_force  = obs['robot0_ee_force']
         obs = self.get_observation()
         return obs
     
     def step(self, action):
         raw_obs, reward, done, info = self.env.step(action)
+        raw_obs['robot0_ee_force'] -= self.init_force
         obs = np.concatenate([
             raw_obs[key] for key in self.obs_keys
         ], axis=0)
+        #self.env.render()
         return obs, reward, done, info
     
     def render(self, mode='rgb_array'):
@@ -116,7 +124,8 @@ def test():
             'object', 
             'robot0_eef_pos', 
             'robot0_eef_quat', 
-            'robot0_gripper_qpos'
+            'robot0_gripper_qpos',
+            'robot0_ee_force'
         ]
     )
 
