@@ -225,7 +225,7 @@ class RobomimicLowdimRunner(BaseLowdimRunner):
         self.abs_action = abs_action
         self.tqdm_interval_sec = tqdm_interval_sec
 
-    def run(self, policy: BaseLowdimPolicy):
+    def run(self, policy: BaseLowdimPolicy, guidance=None):
         device = policy.device
         dtype = policy.dtype
         env = self.env
@@ -238,6 +238,7 @@ class RobomimicLowdimRunner(BaseLowdimRunner):
         # allocate data
         all_video_paths = [None] * n_inits
         all_rewards = [None] * n_inits
+        all_action_histories = [None] * n_inits
 
         for chunk_idx in range(n_chunks):
             start = chunk_idx * n_envs
@@ -259,6 +260,7 @@ class RobomimicLowdimRunner(BaseLowdimRunner):
             # start rollout
             obs = env.reset()
             past_action = None
+            action_history = []
             policy.reset()
 
             env_name = self.env_meta['env_name']
@@ -289,7 +291,7 @@ class RobomimicLowdimRunner(BaseLowdimRunner):
 
                 # run policy
                 with torch.no_grad():
-                    action_dict = policy.predict_action(obs_dict)
+                    action_dict = policy.predict_action(obs_dict, guidance)
 
                 # device_transfer
                 np_action_dict = dict_apply(action_dict,
@@ -304,6 +306,7 @@ class RobomimicLowdimRunner(BaseLowdimRunner):
                 
                 # step env
                 env_action = action
+                action_history.append(action)
                 if self.abs_action:
                     env_action = self.undo_transform_action(action)
 
@@ -320,8 +323,14 @@ class RobomimicLowdimRunner(BaseLowdimRunner):
             pbar.close()
 
             # collect data for this round
+
+            # print(type(all_action_histories))
+            # print(len(all_action_histories))
+            # print(all_action_histories)
+            # print(this_global_slice)
             all_video_paths[this_global_slice] = env.render()[this_local_slice]
             all_rewards[this_global_slice] = env.call('get_attr', 'reward')[this_local_slice]
+            all_action_histories[this_global_slice] = env.call('get_attr', 'action_history')[this_local_slice]
 
         # log
         max_rewards = collections.defaultdict(list)
@@ -334,12 +343,15 @@ class RobomimicLowdimRunner(BaseLowdimRunner):
         # to completely reproduce reported numbers, uncomment this line:
         # for i in range(len(self.env_fns)):
         # and comment out this line
+
         for i in range(n_inits):
             seed = self.env_seeds[i]
             prefix = self.env_prefixs[i]
             max_reward = np.max(all_rewards[i])
+            log_action_history = all_action_histories[i]
             max_rewards[prefix].append(max_reward)
             log_data[prefix+f'sim_max_reward_{seed}'] = max_reward
+            log_data[f'action_history_{seed}'] = log_action_history
 
             # visualize sim
             video_path = all_video_paths[i]

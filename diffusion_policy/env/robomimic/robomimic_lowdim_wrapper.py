@@ -25,6 +25,7 @@ class RobomimicLowdimWrapper(gym.Env):
         self.init_state = init_state
         self.render_hw = render_hw
         self.render_camera_name = render_camera_name
+        self.action_history = []
 
         self.seed_state_map = dict()
         self._seed = None
@@ -94,6 +95,7 @@ class RobomimicLowdimWrapper(gym.Env):
             raw_obs[key] for key in self.obs_keys
         ], axis=0)
         #self.env.render()
+        self.action_history.append(action)
         return obs, reward, done, info
     
     def render(self, mode='rgb_array'):

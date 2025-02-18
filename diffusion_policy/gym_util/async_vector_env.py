@@ -636,10 +636,9 @@ def _worker_shared_memory(index, env_fn, pipe, parent_pipe, shared_memory, error
                
                 # if done:
                 #     observation = env.reset()
-                print("GOING")
+
                 try:
                     observation, reward, done, info = env.step(data)
-                    print("MADE IT THIS FAR")
                     write_to_shared_memory(
                         index, observation, shared_memory, observation_space
                     )

@@ -1,0 +1,10 @@
+[{
+    "function": "repel_point",
+    "function_args": {
+        "point": [0.02, 0.18, 0.98]
+    },
+    "activation": "null",
+    "activation_args": "null",
+    "weight": 300
+      
+}]

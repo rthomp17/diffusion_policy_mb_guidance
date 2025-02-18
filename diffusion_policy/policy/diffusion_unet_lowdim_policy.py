@@ -18,6 +18,7 @@ import copy as cp
 
 from diffusion_policy.common.viz_util import make_quiver, make_arrow
 
+
 data = []
 all_forces = []
 class DiffusionUnetLowdimPolicy(BaseLowdimPolicy):
@@ -62,7 +63,7 @@ class DiffusionUnetLowdimPolicy(BaseLowdimPolicy):
         self.kwargs = kwargs
         self.rotation_transformer = RotationTransformer('axis_angle', 'rotation_6d')
 
-        self.force_adjust = True
+        self.force_adjust = False
         self.k_action_samples = 5
         self.min_force_threshold=10
 
@@ -96,6 +97,7 @@ class DiffusionUnetLowdimPolicy(BaseLowdimPolicy):
             condition_data, condition_mask,
             local_cond=None, global_cond=None,
             generator=None, noisy_cond=False,
+            guide=None,
             # keyword arguments to scheduler.step
             **kwargs
             ):
@@ -133,7 +135,9 @@ class DiffusionUnetLowdimPolicy(BaseLowdimPolicy):
                 start = To - 1
                 end = start + self.n_action_steps
                 action = action_pred[:,start:end]
-            fig.add_trace(go.Scatter3d(x=action[0][:, 0], y=action[0][:, 1], z=action[0][:, 2]))
+
+            np_action = action.cpu().numpy()
+            fig.add_trace(go.Scatter3d(x=np_action[0][:, 0], y=np_action[0][:, 1], z=np_action[0][:, 2]))
 
         for t in scheduler.timesteps:
             # 1. apply conditioning
@@ -149,12 +153,9 @@ class DiffusionUnetLowdimPolicy(BaseLowdimPolicy):
             model_output = model(trajectory, t, 
                 local_cond=local_cond, global_cond=global_cond)#+condition_noise)
 
-            class_guidance = torch.from_numpy(np.array([0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])) # torch.dot(torch.sum(trajectory[0][:, :3], axis=0), torch.from_numpy(np.array([0.0,0.0,1.0])).float())
-            old_model_output = cp.deepcopy(model_output)
-            model_output += class_guidance #* 5 # 10
-            #print(model_output - old_model_output)
-            #input("?")
-
+            if guide is not None:
+                model_output += guide(model_output) #class_guidance #* 5 # 10
+            
             # 3. compute previous image: x_t -> x_t-1
             trajectory = scheduler.step(
                 model_output, t, trajectory, 
@@ -164,15 +165,11 @@ class DiffusionUnetLowdimPolicy(BaseLowdimPolicy):
             
         # finally make sure conditioning is enforced
         trajectory[condition_mask] = condition_data[condition_mask] 
-        # plot(trajectory)
-
-        # fig.show()
-        # input("?")
 
         return trajectory
 
 
-    def predict_action(self, obs_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def predict_action(self, obs_dict: Dict[str, torch.Tensor], guidance=None) -> Dict[str, torch.Tensor]:
         global data
         global all_forces
         """
@@ -234,18 +231,20 @@ class DiffusionUnetLowdimPolicy(BaseLowdimPolicy):
         actions = []
 
         all_forces.append(obs_dict['force_info'])
-        force_adjust_vals = np.where(abs(obs_dict['force_info'][:, -1, :3]) > 10, \
+        force_adjust_vals = torch.where(torch.abs(obs_dict['force_info'][:, -1, :3]) > 10, \
                                                  obs_dict['force_info'][:, -1, :3], \
-                                                 np.zeros_like(obs_dict['force_info'][:, -1, :3]))
-        force_adjust_vals = obs_dict['force_info'][:, -1, :3].numpy()
-        force_adjust_vals = np.zeros_like(force_adjust_vals)
-        force_adjust_vals[:, 2] = np.ones_like(force_adjust_vals[:, 2])
+                                                 torch.zeros_like(obs_dict['force_info'][:, -1, :3]))
+
+
+        force_adjust_vals = obs_dict['force_info'][:, -1, :3]
+        force_adjust_vals = torch.zeros_like(force_adjust_vals)
+        force_adjust_vals[:, 2] = torch.ones_like(force_adjust_vals[:, 2])
         # print(force_adjust_vals)
         # input("?")
-
+        self.k_action_samples = 1
         for i in range(self.k_action_samples):
             # run sampling
-            if self.force_adjust and np.any(force_adjust_vals != 0):
+            if self.force_adjust and torch.any(force_adjust_vals != 0):
                 nsample = self.conditional_sample(
                     cond_data, 
                     cond_mask,
@@ -268,6 +267,7 @@ class DiffusionUnetLowdimPolicy(BaseLowdimPolicy):
                     local_cond=local_cond,
                     global_cond=global_cond,
                     noisy_cond=False,
+                    guide=guidance,
                     **self.kwargs)
 
             # unnormalize prediction
@@ -284,14 +284,14 @@ class DiffusionUnetLowdimPolicy(BaseLowdimPolicy):
                 end = start + self.n_action_steps
                 action = action_pred[:,start:end]
 
-            if self.force_adjust and np.any(force_adjust_vals != 0):
-                if not(np.isnan(action).any() or np.isinf(action).any()):
+            if self.force_adjust and torch.any(force_adjust_vals != 0):
+                if not(torch.isnan(action).any() or torch.isinf(action).any()):
                     #instead just try getting the dot product of the vectors
                     #truncate if the force is less than 10? 
                     #pick the one with the smallest dot
                     #make sure score is nan for nan moves
-                    rel_action = self.undo_transform_action(action)[:, :, :6]
-                    dot_products = [np.dot(force_adjust_vals[0], rel_action[:, j, :3][0]) for j in range(rel_action.shape[1])]
+                    rel_action = self.undo_transform_action(action.cpu().numpy())[:, :, :6]
+                    dot_products = [np.dot(force_adjust_vals.cpu().numpy()[0], rel_action[:, j, :3][0]) for j in range(rel_action.shape[1])]
 
                     #adjustment_thresh_mask = abs(obs_dict['force_info'][:, -1, :]) > self.min_force_threshold
                     #adjustment_direction = obs_dict['force_info'][:, -1, :] > 0
@@ -312,16 +312,17 @@ class DiffusionUnetLowdimPolicy(BaseLowdimPolicy):
                     
                     actions.append(action)
             else:
-                if not(np.isnan(action).any() or np.isinf(action).any()):
+                if torch.isnan(action).any() or torch.isinf(action).any():
                     print(action)
-                    print(np.isnan(action))
-                    print(np.isinf(action))
+                    print(torch.isnan(action))
+                    print(torch.isinf(action))
                     break
+                actions.append(action)
             
 
-        if self.force_adjust and np.any(force_adjust_vals != 0):
+        if self.force_adjust and torch.any(force_adjust_vals != 0):
 
-            action = actions[np.nanargmax(scores)]
+            action = actions[np.nanargmax(scores)].cpu().numpy()
             try:
                 colors = sample_colorscale('Viridis', (scores - np.nanmin(scores))/np.nanmax((scores - np.nanmin(scores))))
             except ValueError:
@@ -334,33 +335,42 @@ class DiffusionUnetLowdimPolicy(BaseLowdimPolicy):
             i = 0
             # print((scores - np.nanmin(scores))/np.nanmax((scores - np.nanmin(scores))))
             # print(colors)
-            for action_traj in actions:
-                quiver_starts = []
-                quiver_ends = []
-                # print(action_traj[-1])
-                # input("?")
-                for step in range(len(action_traj[-1])-1):
-                    quiver_starts.append(action_traj[-1][step])
-                    quiver_ends.append(action_traj[-1][step + 1])
+        #     for action_traj in actions:
+        #         np_action_traj = action_traj.cpu().numpy()
+        #         quiver_starts = []
+        #         quiver_ends = []
+        #         # print(action_traj[-1])
+        #         # input("?")
+        #         for step in range(len(np_action_traj[-1])-1):
+        #             quiver_starts.append(np_action_traj[-1][step])
+        #             quiver_ends.append(np_action_traj[-1][step + 1])
 
-                # print(quiver_starts)
-                # print(quiver_ends)
-                # input("?")
-                data += make_quiver(quiver_starts, quiver_ends, [colors[i] for _ in range(len(quiver_starts))])
-                i += 1
-        else: 
-            colors = sample_colorscale('Viridis', [0])
-            quiver_starts = []
-            quiver_ends = []
-            for step in range(len(action[-1])-1):
-                    quiver_starts.append(action[-1][step])
-                    quiver_ends.append(action[-1][step + 1])
-            data += make_quiver(quiver_starts, quiver_ends, [colors[0] for _ in range(len(quiver_starts))])
+        #         # print(quiver_starts)
+        #         # print(quiver_ends)
+        #         # input("?")
+        #         data += make_quiver(quiver_starts, quiver_ends, [colors[i] for _ in range(len(quiver_starts))])
+        #         i += 1
+        # else: 
+        #     np_actions = [a.cpu().numpy() for a in actions]
+        #     colors = []
+        #     quiver_starts = []
+        #     quiver_ends = []
+        #     for i, np_action in enumerate(np_actions):
+        #         for step in range(len(np_action[-1])-1):
+        #                 quiver_starts.append(np_action[-1][step])
+        #                 quiver_ends.append(np_action[-1][step + 1])
+        #                 colors += sample_colorscale('Viridis', [i/len(np_actions)])
+        #     data += make_quiver(quiver_starts, quiver_ends, colors) #[colors[0] for _ in range(len(quiver_starts))])
+        #     data += [go.Scatter3d(x=[0.02], y=[.2], z=[.98], mode='markers')]
 
 
 
-        pickle.dump(data, open('policy_action_data.pkl', 'wb'))
-        pickle.dump(all_forces, open('policy_forces.pkl', 'wb'))
+        # pickle.dump(data, open('repel_guide_policy_action_data.pkl', 'wb'))
+        # pickle.dump(all_forces, open('repel_guide_policy_forces.pkl', 'wb'))
+
+        if type(action) == np.ndarray:
+            action = torch.from_numpy(action).to(self.device)
+
         result = {
             'action': action,
             'action_pred': action_pred
