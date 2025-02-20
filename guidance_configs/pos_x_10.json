@@ -1,0 +1,9 @@
+[{
+    "function": "in_direction",
+    "function_args": {
+        "direction": [-1,0,0]
+    },
+    "activation": "null",
+    "activation_args": "null",
+    "weight": 0.1
+}]
