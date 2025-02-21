@@ -67,6 +67,8 @@ class DiffusionUnetLowdimPolicy(BaseLowdimPolicy):
         self.k_action_samples = 5
         self.min_force_threshold=10
 
+        self.stochastic_sampling = True
+
         if num_inference_steps is None:
             num_inference_steps = noise_scheduler.config.num_train_timesteps
         self.num_inference_steps = num_inference_steps
@@ -148,20 +150,36 @@ class DiffusionUnetLowdimPolicy(BaseLowdimPolicy):
             
             #condition_noise += class_guidance * 1
 
+            if self.stochastic_sampling:
+                MCMC_steps = 4
+            else:
+                MCMC_steps = 1
+            for i in range(MCMC_steps):
+                # 2. predict model output
+                model_output = model(trajectory, t, 
+                    local_cond=local_cond, global_cond=global_cond)#+condition_noise)
 
-            # 2. predict model output
-            model_output = model(trajectory, t, 
-                local_cond=local_cond, global_cond=global_cond)#+condition_noise)
+                if guide is not None:
+                    if self.stochastic_sampling:
+                        model_output += guide(model_output) * 3 #class_guidance #* 5 # 10
+                    else:
+                        model_output += guide(model_output)
+                
+                # 3. compute previous image: x_t -> x_t-1
+                output = scheduler.step(
+                    model_output, t, trajectory, 
+                    generator=generator,
+                    **kwargs
+                    )
+                
+                trajectory = output.prev_sample
+                clean_sample = output.pred_original_sample
 
-            if guide is not None:
-                model_output += guide(model_output) #class_guidance #* 5 # 10
-            
-            # 3. compute previous image: x_t -> x_t-1
-            trajectory = scheduler.step(
-                model_output, t, trajectory, 
-                generator=generator,
-                **kwargs
-                ).prev_sample
+                if i < MCMC_steps - 1:
+                    # print('mcmc step i: ', i, 'at t: ', t)
+                    std = 1
+                    noise = std * torch.randn(clean_sample.shape, device=clean_sample.device)
+                    trajectory = self.noise_scheduler.add_noise(clean_sample, noise, t)
             
         # finally make sure conditioning is enforced
         trajectory[condition_mask] = condition_data[condition_mask] 

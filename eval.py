@@ -34,9 +34,10 @@ def pretty(d, indent=0):
 @click.option('-o', '--output_dir', required=True)
 @click.option('-g', '--guidance_config', required=True)
 @click.option('-n', '--num_test', default=1)
+@click.option('-s', '--stochastic_sampling', is_flag=True)
 @click.option('-d', '--device', default='cuda:0')
 
-def main(checkpoint, output_dir, guidance_config, num_test, device,):
+def main(checkpoint, output_dir, guidance_config, num_test, stochastic_sampling, device,):
     # if os.path.exists(output_dir):
     #     click.confirm(f"Output path {output_dir} already exists! Overwrite?", abort=True)
     pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -49,7 +50,6 @@ def main(checkpoint, output_dir, guidance_config, num_test, device,):
     # cfg['obs_dim'] = 20
 
     # cfg.policy['model']['global_cond_dim'] = 40
-
     cfg['task']['obs_keys'] += ['robot0_ee_force']
     cfg['task']['obs_keys'] += ['robot0_ee_torque']
     cfg['task']['env_runner']['obs_keys'] += ['robot0_ee_force']
@@ -64,6 +64,7 @@ def main(checkpoint, output_dir, guidance_config, num_test, device,):
     
     # get policy from workspace
     policy = workspace.model
+    policy.stochastic_sampling = stochastic_sampling
     
     # print(type(policy))
     # print(policy.kwargs)
